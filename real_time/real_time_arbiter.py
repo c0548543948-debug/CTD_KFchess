@@ -204,9 +204,10 @@ class RealTimeArbiter:
         if board.get_piece_at(motion.target) is None:
             board.add_piece(motion.piece)
 
+        new_type_for_pawn_arrive_to_lastRow="queen"
         if motion.piece.kind in ("pawn", "p"):
             if (motion.piece.color == "white" and motion.target.row == 0) or \
                (motion.piece.color == "black" and motion.target.row == board.height - 1):
-                motion.piece._kind = "queen"
+                motion.piece._kind = new_type_for_pawn_arrive_to_lastRow
 
         motion.piece.cooldown_remaining = COOLDOWN_BY_KIND.get(motion.piece.kind, DEFAULT_COOLDOWN)

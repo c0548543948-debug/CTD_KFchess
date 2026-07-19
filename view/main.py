@@ -1,6 +1,7 @@
 import sys
 import pathlib
 import time
+import csv
 
 # מוסיפים את תיקיית הבסיס של הפרויקט ל-Python path
 # בלי זה Python לא ימצא את model, engine, input וכו'
@@ -26,21 +27,37 @@ from renderer import Renderer
 #  הגדרות                                                              #
 # ------------------------------------------------------------------ #
 
-# לוח שחמט סטנדרטי בפורמט שה-BoardParser מבין
-# b = black, w = white
-# K=King, Q=Queen, R=Rook, B=Bishop, N=Knight, P=Pawn
-INITIAL_BOARD = """\
-bR bN bB bQ bK bB bN bR
-bP bP bP bP bP bP bP bP
-.  .  .  .  .  .  .  .
-.  .  .  .  .  .  .  .
-.  .  .  .  .  .  .  .
-.  .  .  .  .  .  .  .
-wP wP wP wP wP wP wP wP
-wR wN wB wQ wK wB wN wR"""
+# נתיב לקובץ ה-CSV עם מיקומי הכלים ההתחלתיים
+BOARD_CSV_PATH = "initial_board.csv"
 
 # נתיב לתיקיית ה-assets — יחסי לתיקיית view/ שממנה רצים
 ASSETS_PATH = "assets"
+
+
+# ------------------------------------------------------------------ #
+#  טעינת לוח מ-CSV                                                     #
+# ------------------------------------------------------------------ #
+
+def load_board_from_csv(csv_path: str) -> str:
+    """
+    קוראת קובץ CSV שכל שורה בו היא שורת לוח, וכל תא מופרד בפסיק.
+    מחזירה מחרוזת בפורמט שה-BoardParser מבין (רווח בין תאים, שורה חדשה בין שורות).
+
+    דוגמה לשורה ב-CSV:   bR,bN,bB,bQ,bK,bB,bN,bR
+    דוגמה לפלט:          bR bN bB bQ bK bB bN bR
+    """
+    rows = []
+    with open(csv_path, newline='', encoding='utf-8') as f:
+        # csv.reader יודע לקרוא קובץ CSV ולפצל כל שורה לרשימה של תאים
+        reader = csv.reader(f)
+        for csv_row in reader:
+            if not csv_row:          # מדלגים על שורות ריקות בקובץ
+                continue
+            # מחברים את התאים ברווח — הפורמט שה-BoardParser מבין
+            rows.append(' '.join(csv_row))
+
+    # מחברים את כל שורות הלוח בשורה חדשה
+    return '\n'.join(rows)
 
 # שם חלון OpenCV
 WINDOW_NAME = "KungFu Chess"
@@ -73,8 +90,9 @@ def make_mouse_callback(controller: GameController):
 def main():
 
     # --- בניית לוח ראשוני ---
-    # BoardParser.parse() קורא את מחרוזת הלוח וממיר אותה לאובייקט Board
-    board = BoardParser.parse(INITIAL_BOARD)
+    # טוענים את מיקומי הכלים מקובץ CSV וממירים לאובייקט Board
+    board_str = load_board_from_csv(BOARD_CSV_PATH)
+    board = BoardParser.parse(board_str)
 
     # --- יצירת רכיבי הלוגיקה ---
     game_state = GameState(board)       # מצב המשחק (לוח + game_over + winner)
