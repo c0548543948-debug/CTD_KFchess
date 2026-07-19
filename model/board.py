@@ -80,6 +80,14 @@ class Board:
         # 3. נשמור את הכלי במיקום החדש במילון הלוח
         self._grid[destination] = piece
 
+    def get_all_pieces(self) -> list:
+        """
+        מחזיר רשימה של כל הכלים שנמצאים כרגע על הלוח.
+        הרשימה היא עותק של ה-values מה-dict הפנימי,
+        כדי שאפשר יהיה לעבור עליה בלי לשנות את הלוח.
+        """
+        return list(self._grid.values())
+
     def clone(self) -> 'Board':
         """
         מייצר עותק חדש ועצמאי לחלוטין (Deep Copy) של הלוח וכל הכלים שעליו.

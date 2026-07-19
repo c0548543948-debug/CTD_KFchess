@@ -81,8 +81,14 @@ class RealTimeArbiter:
                         or other in motions_to_remove or other in motions_to_arrive_instantly):
                     continue
 
-                hits = (other.get_current_physical_position() == next_pos or
-                        other.get_next_physical_position() == next_pos)
+                # כלי "באוויר" ב-next_pos רק אם הוא עבר לפחות צעד אחד מהמקור שלו.
+                # אם הוא בצעד 0 (עדיין על הלוח במקורו), לא מדובר בהתנגשות אווירית —
+                # הוא יטופל ע"י הבדיקה הסטטית למטה.
+                other_in_air_at_next = (
+                    other.get_current_physical_position() == next_pos
+                    and other.get_current_physical_step_idx() > 0
+                )
+                hits = other_in_air_at_next or other.get_next_physical_position() == next_pos
                 if not hits:
                     continue
 
@@ -125,6 +131,12 @@ class RealTimeArbiter:
             if not static:
                 continue
 
+            # אם הכלי שנמצא ב-next_pos בעצם זזה כרגע —
+            # הוא לא "סטטי" אמיתי, הוא עוזב את המשבצת הזו.
+            # מתעלמים ממנו כאן; _handle_arrival יטפל בזה כשA יגיע.
+            if self.is_piece_moving(static):
+                continue
+
             idx = motion.get_current_physical_step_idx()
             if static.color == motion.piece.color:
                 motion.force_stop_at_step(idx)
@@ -144,15 +156,49 @@ class RealTimeArbiter:
             if m in self._active_motions:
                 self._active_motions.remove(m)
 
+    def get_active_motion_states(self) -> list[dict]:
+        """
+        מחזיר רשימה של dict אחד לכל תנועה פעילה שלא הסתיימה.
+        כל dict מכיל:
+          "piece"   - אובייקט הכלי שזזה
+          "row"     - מיקום שורה עשרוני (0.0 עד 7.0) בנקודת הזמן הנוכחית
+          "col"     - מיקום עמודה עשרוני
+          "is_jump" - האם זו קפיצה הגנתית (True) או הליכה רגילה (False)
+        """
+        result = []
+        for motion in self._active_motions:
+            if not motion.is_finished:
+                # get_interpolated_position מחזיר (float_row, float_col)
+                # שמחושב מה-elapsed_time ומהמסלול
+                row, col = motion.get_interpolated_position()
+                result.append({
+                    "piece": motion.piece,
+                    "row": row,
+                    "col": col,
+                    "is_jump": motion.is_jump
+                })
+        return result
+
     def _handle_arrival(self, motion: Motion, board: Board, captured_kings: list[str]) -> None:
+        # תיקון 2: לפני הסרת הכלי ממקור — בדוק שהכלי שם הוא אכן הכלי שלנו.
+        # אם כלי אחר כבר נחת על המשבצת הזו בינתיים, אל תמחק אותו.
         if motion.source != motion.target:
-            board.remove_piece_at(motion.source)
+            piece_at_source = board.get_piece_at(motion.source)
+            if piece_at_source is not None and piece_at_source.id == motion.piece.id:
+                board.remove_piece_at(motion.source)
 
         target_piece = board.get_piece_at(motion.target)
         if target_piece and target_piece.color != motion.piece.color:
-            board.remove_piece_at(motion.target)
-            if target_piece.kind == "king":
-                captured_kings.append(target_piece.color)
+            if self.is_piece_moving(target_piece):
+                # תיקון 1: הכלי היריב כבר זזה מכאן — הוא ניצל!
+                # מסירים את הרישום הישן שלו מהלוח (הוא כבר מעוקב ע"י ה-Motion שלו)
+                # כך שהכלי התוקף יוכל לנחות. לא מוסיפים ל-captured_kings.
+                board.remove_piece_at(motion.target)
+            else:
+                # הכלי היריב עמד במקום — נאכל כרגיל
+                board.remove_piece_at(motion.target)
+                if target_piece.kind == "king":
+                    captured_kings.append(target_piece.color)
 
         motion.piece.cell = motion.target
         if board.get_piece_at(motion.target) is None:

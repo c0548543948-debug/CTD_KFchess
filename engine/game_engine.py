@@ -47,3 +47,10 @@ class GameEngine:
     def notify_king_captured(self, loser_color: str) -> None:
         self._state.game_over = True
         self._state.winner = "black" if loser_color == "white" else "white"
+
+    def get_active_motion_states(self) -> list[dict]:
+        """
+        מעביר את מידע התנועות הפעילות מהארביטר לשכבת ה-View.
+        הרנדרר יקרא לפונקציה הזו כדי לדעת איפה לצייר כלים שזזים עכשיו.
+        """
+        return self._arbiter.get_active_motion_states()
