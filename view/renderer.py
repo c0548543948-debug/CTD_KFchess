@@ -5,6 +5,7 @@ import pathlib
 # כך שנוכל לייבא מ-config, model וכו' גם כשרצים מתוך תיקיית view/
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
+import math
 import cv2
 
 from img import Img
@@ -39,6 +40,14 @@ class Renderer:
         if self._board_data is None:
             raise FileNotFoundError(f"לא ניתן לטעון את תמונת הלוח: {board_path}")
 
+        # הלוח נטען כ-BGR (3 ערוצים), אבל הספריטים הם BGRA (4 ערוצים עם שקיפות).
+        # ב-draw_on: אם sprite=4ch ו-canvas=3ch, הקוד ממיר את הsprite ל-3ch ומאבד את
+        # ערוץ ה-alpha — הפיקסלים השקופים [0,0,0,0] הופכים ל-[0,0,0] = שחור מלא.
+        # הפתרון: ממירים את הלוח ל-BGRA כאן, כך שה-draw_on רואה 4ch+4ch
+        # ומבצע alpha-blending נכון במקום להשמיד את השקיפות.
+        if self._board_data.shape[2] == 3:
+            self._board_data = cv2.cvtColor(self._board_data, cv2.COLOR_BGR2BGRA)
+
         # תמונת הלוח היא 822×828 פיקסלים, לא 800×800.
         # יש גם גבול דקורטיבי: ~2px משמאל, ~6px מלמעלה.
         # מחשבים את גודל התא האמיתי מתוך ממדי התמונה בפועל.
@@ -52,17 +61,19 @@ class Renderer:
     #  ממשק ציבורי                                                         #
     # ------------------------------------------------------------------ #
 
-    def render(self, snapshot, motion_states: list, elapsed_ms: int) -> Img:
+    def render(self, snapshot, motion_states: list, elapsed_ms: int,
+               selected_pos=None, valid_moves: list = None) -> Img:
         """
         מצייר פריים אחד של המשחק ומחזיר Img מוכן להצגה.
 
         snapshot      - GameState מ-engine.get_snapshot()
-                        מכיל את הלוח הסטטי (מי איפה לפי הלוגיקה)
         motion_states - רשימה מ-engine.get_active_motion_states()
-                        מכיל כלים שזזים עכשיו עם מיקום מאינטרפולציה
         elapsed_ms    - כמה מילישניות עברו מתחילת המשחק
-                        משמש לחישוב הפריים של האנימציה
+        selected_pos  - Position של הכלי הנבחר (או None)
+        valid_moves   - רשימת Position של מהלכים אפשריים (או None)
         """
+        if valid_moves is None:
+            valid_moves = []
 
         # שלב 1: יצירת עותק טרי של תמונת הלוח
         # חשוב: .copy() מחזיר numpy array חדש, כך שציורים על canvas
@@ -77,7 +88,13 @@ class Renderer:
         for state in motion_states:
             moving_info[state["piece"].id] = state
 
-        # שלב 3: ציור כלים שנמצאים על הלוח הסטטי
+        # שלב 3: ציור הדגשת הכלי הנבחר ואפשרויות המהלך
+        if selected_pos is not None:
+            self._draw_selection(canvas, selected_pos, elapsed_ms)
+        for move_pos in valid_moves:
+            self._draw_valid_move(canvas, move_pos, snapshot)
+
+        # שלב 4: ציור כלים שנמצאים על הלוח הסטטי
         # get_all_pieces() מחזיר רשימה של כל הכלים שב-board._grid
         for piece in snapshot.board.get_all_pieces():
 
@@ -105,7 +122,7 @@ class Renderer:
             # מצייר את הפריים על הקנבס
             self._draw_piece_at(canvas, frame, row, col)
 
-        # שלב 4: ציור כלים שבאוויר (קפיצה)
+        # שלב 5: ציור כלים שבאוויר (קפיצה)
         # כלים קופצים מוסרים מהלוח הסטטי (ב-start_jump_motion),
         # אז הם לא מופיעים ב-get_all_pieces() אבל כן ב-motion_states
         board_piece_ids = {p.id for p in snapshot.board.get_all_pieces()}
@@ -115,10 +132,20 @@ class Renderer:
                 piece = state["piece"]
                 row   = state["row"]
                 col   = state["col"]
+
+                # חישוב offset אנכי פרבולי לאפקט קפיצה:
+                # t=0 ot=1 → offset=0 (ריצפה), t=0.5 → offset מקסימלי (שיא)
+                # הנוסחה: 4 * t * (1-t) נותנת פרבולה 0→1→0
+                # המיינוס מוריד את הכלי מעלה (row קטן יותר = גבוה יותר על המסך)
+                t = state.get("jump_fraction", 0.0)
+                parabola = 4.0 * t * (1.0 - t)          # 0 → 1 → 0
+                max_height_rows = 0.9                     # גובה מקסימלי ביחידות שורות
+                jump_row_offset = -parabola * max_height_rows
+
                 frame = self._sprite_manager.get_frame(
                     piece, elapsed_ms, is_moving=False, is_jump=True
                 )
-                self._draw_piece_at(canvas, frame, row, col)
+                self._draw_piece_at(canvas, frame, row + jump_row_offset, col)
 
         # שלב 5: טקסט מצב המשחק
         if snapshot.game_over:
@@ -214,3 +241,81 @@ class Renderer:
             canvas.img[y1:y2, x1:x2] = [140, 140, 140, 255]  # BGRA
         else:
             canvas.img[y1:y2, x1:x2] = [140, 140, 140]        # BGR
+
+    def _draw_selection(self, canvas: Img, selected_pos, elapsed_ms: int) -> None:
+        """
+        מצייר מסגרת מהבהבת סביב המשבצת של הכלי הנבחר.
+
+        האפקט: מסגרת צהובה/זהב שעוברת pulse — עוצמת הצבע גדלה וקטנה
+        בגל סינוס עם תדר של ~2Hz (מחזור כל 500ms).
+
+        math.sin מחזיר ערך בין -1 ל-1.
+        (sin+1)/2 מנרמל אותו ל-0..1.
+        משתמשים בזה לאינטרפולציה בין עוצמה מינימלית למקסימלית.
+        """
+        row = selected_pos.row
+        col = selected_pos.col
+
+        # פינה שמאלית עליונה של המשבצת
+        x1 = int(self._offset_x + col * self._cell_w)
+        y1 = int(self._offset_y + row * self._cell_h)
+        x2 = int(x1 + self._cell_w)
+        y2 = int(y1 + self._cell_h)
+
+        # pulse: 0.0 עד 1.0, מחזור כל ~500ms
+        pulse = (math.sin(elapsed_ms / 250.0) + 1.0) / 2.0
+
+        # עוצמת הצבע: בין 160 ל-255 (תמיד גלוי, לא נכבה לגמרי)
+        intensity = int(160 + pulse * 95)
+
+        # צהוב: B=0, G=intensity, R=intensity (BGR)
+        color = (0, intensity, intensity, 255)
+
+        # עובי המסגרת: 3 פיקסלים
+        thickness = 3
+
+        # cv2.rectangle מקבל (canvas, pt1, pt2, color, thickness)
+        # כשthickness > 0 מציירים רק את המסגרת (לא מלא)
+        cv2.rectangle(canvas.img, (x1, y1), (x2, y2), color, thickness)
+
+    def _draw_valid_move(self, canvas: Img, move_pos, snapshot) -> None:
+        """
+        מצייר ריבוע צהוב שקוף חלקית על משבצת יעד אפשרית.
+
+        alpha blending ידני: pixel_out = pixel_bg * (1-alpha) + yellow * alpha
+        cv2.rectangle לא תומך ב-alpha, אז עושים זאת ישירות על מערך ה-numpy.
+        """
+        import numpy as np
+
+        row = move_pos.row
+        col = move_pos.col
+
+        # גבולות המשבצת בפיקסלים
+        x1 = int(self._offset_x + col * self._cell_w)
+        y1 = int(self._offset_y + row * self._cell_h)
+        x2 = int(x1 + self._cell_w)
+        y2 = int(y1 + self._cell_h)
+
+        # בדיקת גבולות
+        H, W = canvas.img.shape[:2]
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(W, x2)
+        y2 = min(H, y2)
+        if x1 >= x2 or y1 >= y2:
+            return
+
+        # alpha = כמה "צהוב" מתווסף — 0.0 שקוף לגמרי, 1.0 אטום לגמרי
+        alpha = 0.35
+
+        # צהוב ב-BGR: B=0, G=220, R=220
+        yellow = np.array([0, 220, 220], dtype=np.float32)
+
+        # שולפים את אזור הריבוע מהקנבס
+        region = canvas.img[y1:y2, x1:x2].astype(np.float32)
+
+        # מבצעים blending על ערוצי BGR בלבד (3 ערוצים ראשונים)
+        region[..., :3] = region[..., :3] * (1 - alpha) + yellow * alpha
+
+        # כותבים בחזרה לקנבס
+        canvas.img[y1:y2, x1:x2] = region.astype(canvas.img.dtype)

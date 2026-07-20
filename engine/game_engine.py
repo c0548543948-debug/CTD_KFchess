@@ -2,6 +2,7 @@ from model.game_state import GameState
 from model.position import Position
 from real_time.real_time_arbiter import RealTimeArbiter
 from rules.rule_engine import validate_motion
+from rules.movement_rules import MOVEMENT_RULES
 
 class GameEngine:
     def __init__(self, game_state: GameState, arbiter: RealTimeArbiter):
@@ -47,6 +48,22 @@ class GameEngine:
     def notify_king_captured(self, loser_color: str) -> None:
         self._state.game_over = True
         self._state.winner = "black" if loser_color == "white" else "white"
+
+    def get_valid_moves(self, source: Position) -> list:
+        """
+        מחזיר רשימת Position-ים שהכלי ב-source יכול לנוע אליהם.
+        משתמש ישירות ב-MOVEMENT_RULES כך שלא צריך לעבור על כל הלוח.
+        מחזיר רשימה ריקה אם אין כלי, הכלי בcooldown, או אין חוק.
+        """
+        piece = self._state.board.get_piece_at(source)
+        if piece is None:
+            return []
+        if piece.cooldown_remaining > 0:
+            return []
+        rule_fn = MOVEMENT_RULES.get(piece.kind)
+        if rule_fn is None:
+            return []
+        return rule_fn(self._state.board, piece)
 
     def get_active_motion_states(self) -> list[dict]:
         """

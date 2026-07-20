@@ -184,11 +184,20 @@ class RealTimeArbiter:
                 # get_interpolated_position מחזיר (float_row, float_col)
                 # שמחושב מה-elapsed_time ומהמסלול
                 row, col = motion.get_interpolated_position()
+
+                # jump_fraction: כמה מהקפיצה עבר (0.0 = התחלה, 1.0 = סוף)
+                # משמש לחישוב גובה פרבולי בrenderer
+                if motion.is_jump and motion.total_duration_ms > 0:
+                    jump_fraction = motion.elapsed_time / motion.total_duration_ms
+                else:
+                    jump_fraction = 0.0
+
                 result.append({
                     "piece": motion.piece,
                     "row": row,
                     "col": col,
-                    "is_jump": motion.is_jump
+                    "is_jump": motion.is_jump,
+                    "jump_fraction": jump_fraction
                 })
         return result
 

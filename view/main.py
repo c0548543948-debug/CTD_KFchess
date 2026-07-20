@@ -75,10 +75,9 @@ def make_mouse_callback(controller: GameController):
     משתמשים ב-closure כדי שהפונקציה "תזכור" את ה-controller.
     """
     def on_mouse(event, x, y, flags, param):
-        # EVENT_LBUTTONDOWN = לחיצה שמאלית בלבד (לא גרירה, לא שחרור)
-        if event == cv2.EVENT_LBUTTONDOWN:
-            # x, y הם קואורדינטות פיקסלים בחלון
-            # ה-controller + BoardMapper ממירים אותם לשורה/עמודה לוגית
+        # Windows שולח LBUTTONDBLCLK במקום LBUTTONDOWN על הלחיצה השנייה בדאבל-קליק.
+        # כדי שהcontroller יקבל את שתי הלחיצות, מטפלים בשני האירועים.
+        if event in (cv2.EVENT_LBUTTONDOWN, cv2.EVENT_LBUTTONDBLCLK):
             controller.handle_click(x, y)
     return on_mouse
 
@@ -147,8 +146,13 @@ def main():
         motion_states = engine.get_active_motion_states()
 
         # --- שלב 3: ציור ---
+        # קריאת הכלי הנבחר ומהלכיו האפשריים מה-controller
+        selected_pos = controller.selected_position
+        valid_moves = engine.get_valid_moves(selected_pos) if selected_pos is not None else []
+
         # renderer מחזיר Img עם הפריים המצויר
-        canvas = renderer.render(snapshot, motion_states, elapsed_ms)
+        canvas = renderer.render(snapshot, motion_states, elapsed_ms,
+                                 selected_pos=selected_pos, valid_moves=valid_moves)
 
         # הצגה בחלון OpenCV
         cv2.imshow(WINDOW_NAME, canvas.img)
