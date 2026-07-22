@@ -1,5 +1,5 @@
 from __future__ import annotations
-from model.position import Position
+from engine.model.position import Position
 
 # פרמטרי הלוח האמיתיים — חייבים להתאים לחישובים ב-renderer.py
 # תמונת הלוח היא 822×828 פיקסלים עם גבול קישוטי של 2px משמאל ו-6px מלמעלה
