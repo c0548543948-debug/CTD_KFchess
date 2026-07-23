@@ -1,16 +1,10 @@
 import unittest
 import sys, os; sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../..'))
 from engine.model.position import Position
-from engine.model.piece import Piece
 from client.input.controller import GameController
 
 
-def make_piece(kind="rook", color="white", row=0, col=0):
-    return Piece(f"{color}_{kind}_{row}_{col}", color, kind, Position(row, col))
-
-
 class FakeWSClient:
-    """מחליף את WSClient האמיתי — שומר את המסר האחרון שנשלח"""
     def __init__(self):
         self.last_sent = None
 
@@ -21,11 +15,6 @@ class FakeWSClient:
 class FakeBoardMapper:
     def to_board_position(self, x, y):
         return Position(x, y)
-
-
-class FakeSnapshot:
-    def __init__(self, board):
-        self.board = board
 
 
 class TestControllerBuilders(unittest.TestCase):
@@ -49,15 +38,13 @@ class TestControllerBuilders(unittest.TestCase):
         result = self.controller._pos_to_str(pos)
         self.assertEqual(result, "a1")
 
-    def test_build_move_white_queen(self):
-        piece = make_piece(kind="queen", color="white")
-        result = self.controller._build_move(piece, Position(1, 4), Position(4, 4))
-        self.assertEqual(result, "WQe2e5")
+    def test_build_move(self):
+        result = self.controller._build_move(Position(1, 4), Position(4, 4))
+        self.assertEqual(result, "e2e5")
 
-    def test_build_jump_black_rook(self):
-        piece = make_piece(kind="rook", color="black")
-        result = self.controller._build_jump(piece, Position(0, 0))
-        self.assertEqual(result, "BRa1")
+    def test_build_jump(self):
+        result = self.controller._build_jump(Position(0, 0))
+        self.assertEqual(result, "a1")
 
 
 if __name__ == "__main__":

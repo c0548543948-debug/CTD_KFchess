@@ -4,8 +4,7 @@ import time
 from engine.model.position import Position
 from client.input.board_mapper import BoardMapper
 from client.network.ws_client import WSClient
-from client.input.config import KIND_TO_LETTER, COLOR_TO_LETTER, COL_TO_LETTER, DOUBLE_CLICK_THRESHOLD
-
+from client.config import COL_TO_LETTER, DOUBLE_CLICK_THRESHOLD
 class GameController:
     def __init__(self, ws_client: WSClient, board_mapper: BoardMapper, get_snapshot):
         self._ws = ws_client
@@ -37,7 +36,7 @@ class GameController:
 
         if is_double_click and clicked_piece is not None:
             self._selected_position = None
-            self._ws.send(self._build_jump(clicked_piece, clicked_pos))
+            self._ws.send(self._build_jump(clicked_pos))
             return
 
         if self._selected_position is None:
@@ -50,7 +49,7 @@ class GameController:
 
         if clicked_pos == source_pos:
             self._selected_position = None
-            self._ws.send(self._build_jump(source_piece, source_pos))
+            self._ws.send(self._build_jump(source_pos))
             return
 
         if (source_piece is not None and clicked_piece is not None
@@ -59,25 +58,18 @@ class GameController:
             return
 
         self._selected_position = None
-        self._ws.send(self._build_move(source_piece, source_pos, clicked_pos))
+        self._ws.send(self._build_move(source_pos, clicked_pos))
 
     def _pos_to_str(self, pos: Position) -> str:
         col_letter = COL_TO_LETTER[pos.col]
         row_number = str(pos.row + 1)
         return col_letter + row_number
 
-    def _build_move(self, piece, source: Position, target: Position) -> str:
-        color = COLOR_TO_LETTER[piece.color]
-        kind  = KIND_TO_LETTER[piece.kind]
-        src   = self._pos_to_str(source)
-        tgt   = self._pos_to_str(target)
-        return color + kind + src + tgt
+    def _build_move(self, source: Position, target: Position) -> str:
+        return self._pos_to_str(source) + self._pos_to_str(target)
 
-    def _build_jump(self, piece, pos: Position) -> str:
-        color = COLOR_TO_LETTER[piece.color]
-        kind  = KIND_TO_LETTER[piece.kind]
-        p     = self._pos_to_str(pos)
-        return color + kind + p
+    def _build_jump(self, pos: Position) -> str:
+        return self._pos_to_str(pos)
 
     @property
     def selected_position(self) -> Position:
